@@ -26,34 +26,30 @@ jobs:
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT }}
+          password: ${{ secrets.SSH_PASSWORD }}
           source: |
             bot.js
             package.json
             package-lock.json
             ecosystem.config.js
-          target: ${{ secrets.DEPLOY_PATH }}
+          target: ~/users-top-bot
 
       - name: Configure and restart on server
         uses: appleboy/ssh-action@v1.0.0
-        env:
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT }}
+          password: ${{ secrets.SSH_PASSWORD }}
           script: |
             set -e
-            mkdir -p "$DEPLOY_PATH"
-            cd "$DEPLOY_PATH"
+            mkdir -p ~/users-top-bot
+            cd ~/users-top-bot
             cat > .env << 'EOF'
             TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
             SUPABASE_URL=${{ secrets.SUPABASE_URL }}
             SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}
             WEB_APP_URL=${{ secrets.WEB_APP_URL }}
-            API_PORT=${{ secrets.API_PORT }}
+            API_PORT=3000
             EOF
             npm ci
             pm2 startOrReload ecosystem.config.js
