@@ -93,10 +93,13 @@ async function loadCountersFromDB() {
   }
 }
 
-// Сохранение счётчика в БД с сохранением ника
+// Сохранение счётчика в БД с сохранением ника и аватара
 async function saveCounterToDB(userId, count, username, firstName) {
   try {
     console.log(`💾 Сохранение: ID ${userId}, Ник @${username}, Имя: ${firstName}, Счёт: ${count}`);
+    
+    // Получить аватар пользователя
+    const avatarUrl = await getAvatarUrlById(userId);
     
     const { error } = await supabase
       .from('user_messages')
@@ -105,6 +108,7 @@ async function saveCounterToDB(userId, count, username, firstName) {
         message_count: count,
         username: username,
         first_name: firstName,
+        avatar_url: avatarUrl,
         last_message_date: new Date().toISOString()
       }, { onConflict: 'user_id' });
     
@@ -113,7 +117,7 @@ async function saveCounterToDB(userId, count, username, firstName) {
       throw error;
     }
     
-    console.log(`✅ Успешно сохранено для ${firstName}`);
+    console.log(`✅ Успешно сохранено для ${firstName}${avatarUrl ? ' ✓ аватар загружен' : ''}`);
   } catch (error) {
     console.error('⚠️ Ошибка сохранения счётчика:', error.message);
   }
@@ -346,107 +350,4 @@ loadCountersFromDB();
 console.log('🤖 Бот запущен и готов к работе...');
 console.log('📢 Жду входящих сообщений...\n');
 
-// Простой API для получения топа
-const http = require('http');
-
-function parseAllowedOrigins() {
-  const raw = (process.env.CORS_ORIGINS || '').trim();
-  if (!raw) return null;
-  return new Set(
-    raw
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean)
-  );
-}
-
-const allowedOrigins = parseAllowedOrigins();
-
-function getCorsOrigin(req) {
-  const origin = req.headers.origin;
-  if (!origin) return '*';
-  if (!allowedOrigins) return '*';
-  return allowedOrigins.has(origin) ? origin : 'null';
-}
-
-function sendJson(req, res, status, payload) {
-  const corsOrigin = getCorsOrigin(req);
-  res.writeHead(status, {
-    'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': corsOrigin,
-    'Access-Control-Allow-Methods': 'GET, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Vary': 'Origin',
-  });
-  res.end(payload === undefined ? '' : JSON.stringify(payload));
-}
-
-const server = http.createServer(async (req, res) => {
-  try {
-    if (req.method === 'OPTIONS') {
-      // CORS preflight
-      sendJson(req, res, 204, undefined);
-      return;
-    }
-
-    if (req.method !== 'GET') {
-      sendJson(req, res, 405, { error: 'Method Not Allowed' });
-      return;
-    }
-
-    const url = new URL(req.url, 'http://localhost');
-    const limit = Math.min(parseInt(url.searchParams.get('limit') || '10', 10), 50);
-
-    if (url.pathname === '/top') {
-      const data = await fetchTopAll(limit);
-      const items = await Promise.all(
-        (data || []).map(async (row) => ({
-          ...row,
-          avatar_url: await getAvatarUrlById(row.user_id),
-        }))
-      );
-      sendJson(req, res, 200, { items });
-      return;
-    }
-
-    if (url.pathname === '/top-weekly') {
-      const data = await fetchTopWeekly(limit);
-      sendJson(req, res, 200, { items: data });
-      return;
-    }
-
-    // Вернуть URL аватарки пользователя по user_id
-    if (url.pathname === '/avatar') {
-      const userIdParam = url.searchParams.get('user_id');
-      if (!userIdParam) {
-        sendJson(req, res, 400, { error: 'user_id is required' });
-        return;
-      }
-      const userId = parseInt(userIdParam, 10);
-      if (Number.isNaN(userId)) {
-        sendJson(req, res, 400, { error: 'user_id must be a number' });
-        return;
-      }
-
-      const urlStr = await getAvatarUrlById(userId);
-      if (!urlStr) {
-        sendJson(req, res, 404, { error: 'Avatar not found' });
-        return;
-      }
-      sendJson(req, res, 200, { url: urlStr });
-      return;
-    }
-
-    sendJson(req, res, 404, { error: 'Not Found' });
-  } catch (error) {
-    console.error('❌ API error:', error);
-    sendJson(req, res, 500, { error: 'Internal Server Error' });
-  }
-});
-
-server.listen(apiPort, () => {
-  console.log(`🌐 API запущен на порту ${apiPort}`);
-  console.log('   GET /top?limit=10        — топ по всем сообщениям');
-  console.log('   GET /top-weekly?limit=10  — топ за неделю');
-  console.log('   GET /avatar?user_id=ID    — URL аватарки пользователя');
-});
+// API через Supabase REST (не нужен свой сервер)
