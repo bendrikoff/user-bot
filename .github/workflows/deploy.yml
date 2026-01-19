@@ -38,9 +38,11 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           password: ${{ secrets.SSH_PASSWORD }}
           port: 22
+          script_stop: true
           script: |
-            source ~/.bashrc || source ~/.profile || true
-            set -e
+            export PATH="/usr/local/bin:/usr/bin:$PATH"
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" || true
             mkdir -p ~/users-top-bot
             cd ~/users-top-bot
             cat > .env << 'EOF'
@@ -50,6 +52,8 @@ jobs:
             WEB_APP_URL=${{ secrets.WEB_APP_URL }}
             API_PORT=3000
             EOF
-            npm ci
-            pm2 startOrReload ecosystem.config.js
-            pm2 save
+            which npm || echo "npm not found in PATH"
+            which pm2 || echo "pm2 not found in PATH"
+            npm ci || /usr/bin/npm ci || /usr/local/bin/npm ci
+            pm2 startOrReload ecosystem.config.js || /usr/local/bin/pm2 startOrReload ecosystem.config.js
+            pm2 save || /usr/local/bin/pm2 save
