@@ -2,7 +2,7 @@ name: Deploy
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "master" ]
   workflow_dispatch: {}
 
 jobs:
@@ -22,11 +22,12 @@ jobs:
         run: npm ci
 
       - name: Copy files to server
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@v0.1.8
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           password: ${{ secrets.SSH_PASSWORD }}
+          port: 22
           source: |
             bot.js
             package.json
@@ -35,11 +36,12 @@ jobs:
           target: ~/users-top-bot
 
       - name: Configure and restart on server
-        uses: appleboy/ssh-action@v1.0.0
+        uses: appleboy/ssh-action@v1.1.0
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           password: ${{ secrets.SSH_PASSWORD }}
+          port: 22
           script: |
             set -e
             mkdir -p ~/users-top-bot
