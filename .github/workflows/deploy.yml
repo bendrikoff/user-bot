@@ -28,7 +28,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           password: ${{ secrets.SSH_PASSWORD }}
           port: 22
-          source: "bot.js,package.json,package-lock.json,ecosystem.config.js"
+          source: "bot.js,package.json,package-lock.json,ecosystem.config.js,ecosystem.tunnel.config.js"
           target: ~/users-top-bot
 
       - name: Configure and restart on server
@@ -50,6 +50,13 @@ jobs:
             if ! command -v pm2 &> /dev/null; then
               npm install -g pm2
             fi
+
+            # Установка cloudflared (для HTTPS-туннеля без домена) если отсутствует
+            if [ ! -x /usr/local/bin/cloudflared ]; then
+              echo "Installing cloudflared..."
+              curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared
+              chmod +x /usr/local/bin/cloudflared
+            fi
             
             mkdir -p ~/users-top-bot
             cd ~/users-top-bot
@@ -59,8 +66,10 @@ jobs:
             SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}
             WEB_APP_URL=${{ secrets.WEB_APP_URL }}
             API_PORT=3000
+            CORS_ORIGINS=${{ secrets.CORS_ORIGINS }}
             EOF
             npm ci
             pm2 startOrReload ecosystem.config.js
+            pm2 startOrReload ecosystem.tunnel.config.js
             pm2 save
             pm2 startup | tail -n 1 | bash || true

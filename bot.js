@@ -349,15 +349,48 @@ console.log('📢 Жду входящих сообщений...\n');
 // Простой API для получения топа
 const http = require('http');
 
-function sendJson(res, status, payload) {
-  res.writeHead(status, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(payload));
+function parseAllowedOrigins() {
+  const raw = (process.env.CORS_ORIGINS || '').trim();
+  if (!raw) return null;
+  return new Set(
+    raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+  );
+}
+
+const allowedOrigins = parseAllowedOrigins();
+
+function getCorsOrigin(req) {
+  const origin = req.headers.origin;
+  if (!origin) return '*';
+  if (!allowedOrigins) return '*';
+  return allowedOrigins.has(origin) ? origin : 'null';
+}
+
+function sendJson(req, res, status, payload) {
+  const corsOrigin = getCorsOrigin(req);
+  res.writeHead(status, {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': corsOrigin,
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Vary': 'Origin',
+  });
+  res.end(payload === undefined ? '' : JSON.stringify(payload));
 }
 
 const server = http.createServer(async (req, res) => {
   try {
+    if (req.method === 'OPTIONS') {
+      // CORS preflight
+      sendJson(req, res, 204, undefined);
+      return;
+    }
+
     if (req.method !== 'GET') {
-      sendJson(res, 405, { error: 'Method Not Allowed' });
+      sendJson(req, res, 405, { error: 'Method Not Allowed' });
       return;
     }
 
@@ -372,13 +405,13 @@ const server = http.createServer(async (req, res) => {
           avatar_url: await getAvatarUrlById(row.user_id),
         }))
       );
-      sendJson(res, 200, { items });
+      sendJson(req, res, 200, { items });
       return;
     }
 
     if (url.pathname === '/top-weekly') {
       const data = await fetchTopWeekly(limit);
-      sendJson(res, 200, { items: data });
+      sendJson(req, res, 200, { items: data });
       return;
     }
 
@@ -386,28 +419,28 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/avatar') {
       const userIdParam = url.searchParams.get('user_id');
       if (!userIdParam) {
-        sendJson(res, 400, { error: 'user_id is required' });
+        sendJson(req, res, 400, { error: 'user_id is required' });
         return;
       }
       const userId = parseInt(userIdParam, 10);
       if (Number.isNaN(userId)) {
-        sendJson(res, 400, { error: 'user_id must be a number' });
+        sendJson(req, res, 400, { error: 'user_id must be a number' });
         return;
       }
 
       const urlStr = await getAvatarUrlById(userId);
       if (!urlStr) {
-        sendJson(res, 404, { error: 'Avatar not found' });
+        sendJson(req, res, 404, { error: 'Avatar not found' });
         return;
       }
-      sendJson(res, 200, { url: urlStr });
+      sendJson(req, res, 200, { url: urlStr });
       return;
     }
 
-    sendJson(res, 404, { error: 'Not Found' });
+    sendJson(req, res, 404, { error: 'Not Found' });
   } catch (error) {
     console.error('❌ API error:', error);
-    sendJson(res, 500, { error: 'Internal Server Error' });
+    sendJson(req, res, 500, { error: 'Internal Server Error' });
   }
 });
 
