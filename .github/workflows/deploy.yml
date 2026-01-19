@@ -39,6 +39,7 @@ jobs:
           password: ${{ secrets.SSH_PASSWORD }}
           port: 22
           script: |
+            source ~/.bashrc || source ~/.profile || true
             set -e
             mkdir -p ~/users-top-bot
             cd ~/users-top-bot
