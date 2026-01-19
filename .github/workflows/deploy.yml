@@ -60,6 +60,12 @@ jobs:
             
             mkdir -p ~/users-top-bot
             cd ~/users-top-bot
+
+            # Пустой конфиг, чтобы cloudflared не подхватывал ~/.cloudflared/config.yml и не требовал cert.pem
+            cat > cloudflared-empty.yml << 'EOF'
+            # intentionally empty (Quick Tunnel)
+            EOF
+
             cat > .env << 'EOF'
             TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
             SUPABASE_URL=${{ secrets.SUPABASE_URL }}
