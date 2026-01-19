@@ -22,7 +22,7 @@ jobs:
         run: npm ci
 
       - name: Copy files to server
-        uses: appleboy/scp-action@v0.1.8
+        uses: appleboy/scp-action@master
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
@@ -36,7 +36,7 @@ jobs:
           target: ~/users-top-bot
 
       - name: Configure and restart on server
-        uses: appleboy/ssh-action@v1.1.0
+        uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
