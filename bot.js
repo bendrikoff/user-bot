@@ -11,8 +11,12 @@ const bot = new TelegramBot(token, { polling: true });
 // Инициализация Supabase
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY;
+const topFunctionUrl = process.env.SUPABASE_TOP_FUNCTION_URL;
+const topFunctionKey = process.env.SUPABASE_FUNCTION_KEY || supabaseKey;
 console.log('🗄️ Supabase URL:', supabaseUrl ? '✅ Установлен' : '❌ Не установлен');
 console.log('🔐 Supabase Key:', supabaseKey ? '✅ Установлен' : '❌ Не установлен');
+console.log('🌐 Edge function URL:', topFunctionUrl ? '✅ Установлен' : '❌ Не установлен');
+console.log('🔑 Edge function key:', topFunctionKey ? '✅ Установлен' : '❌ Не установлен');
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 const apiPort = process.env.API_PORT || 3000;
@@ -53,6 +57,29 @@ async function fetchTopWeekly(limit = 10) {
     .limit(limit);
   if (error) throw error;
   return data || [];
+}
+
+async function fetchTopDailyFromEdge(limit = 3) {
+  if (!topFunctionUrl) throw new Error('SUPABASE_TOP_FUNCTION_URL не задан');
+  if (!topFunctionKey) throw new Error('SUPABASE_FUNCTION_KEY не задан (или SUPABASE_KEY пуст)');
+
+  const url = `${topFunctionUrl}?period=day`;
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${topFunctionKey}`,
+      apikey: topFunctionKey,
+    },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Edge function ${response.status}: ${text}`);
+  }
+
+  const payload = await response.json();
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  return items.slice(0, limit);
 }
 
 // Получить URL аватара пользователя по его Telegram user_id
@@ -340,33 +367,42 @@ bot.onText(/\/start/, (msg) => {
 });
 
 // Команда /top - показать топ с кнопкой открытия мини-приложения
-bot.onText(/\/top/, (msg) => {
+bot.onText(/\/top/, async (msg) => {
   const chatId = msg.chat.id;
 
   if (!isAllowed(chatId)) return;
 
   console.log(`\n📊 Команда /top от пользователя ID: ${msg.from.id}`);
 
-  const webAppUrl = process.env.WEB_APP_URL;
-  
-  if (webAppUrl) {
-    // Отправляем сообщение с inline-кнопкой
-    bot.sendMessage(
-      chatId,
-      '📊 <b>Статистика активности чата</b>\n\nОткройте мини-приложение, чтобы увидеть полный рейтинг участников!',
-      {
-        parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: [[
-            { text: '📊 Открыть ТОП', web_app: { url: webAppUrl } }
-          ]]
+  try {
+    const dailyTop = await fetchTopDailyFromEdge(3);
+    const dailyLines = dailyTop.length
+      ? dailyTop
+          .map((row, index) => {
+            const nick = row.username ? `@${row.username}` : row.first_name || 'Без имени';
+            const count = row.day_count ?? 0;
+            return `${index + 1}. ${nick} - <b>${count}</b> сообщений`;
+          })
+          .join('\n')
+      : 'Пока нет данных за сегодня.';
+
+    const webAppUrl = process.env.WEB_APP_URL;
+    const messageBody = `📊 <b>ТОП 3 за сегодня</b>\n\n${dailyLines}` +
+      (webAppUrl ? '\n\nОткройте мини-приложение, чтобы увидеть полный рейтинг участников!' : '');
+
+    const replyMarkup = webAppUrl
+      ? {
+          reply_markup: {
+            inline_keyboard: [[{ text: '📊 Открыть ТОП', web_app: { url: webAppUrl } }]]
+          }
         }
-      }
-    );
-    console.log('✅ Сообщение с кнопкой ТОПа отправлено');
-  } else {
-    bot.sendMessage(chatId, '⚠️ Мини-приложение не настроено. Используйте /stats для просмотра топа.');
-    console.log('⚠️ WEB_APP_URL не настроен');
+      : {};
+
+    await bot.sendMessage(chatId, messageBody, { parse_mode: 'HTML', ...replyMarkup });
+    console.log('✅ Сообщение с дневным ТОПом отправлено');
+  } catch (error) {
+    console.error('❌ Ошибка при загрузке дневного ТОПа:', error);
+    bot.sendMessage(chatId, '❌ Не удалось загрузить дневной ТОП. Попробуйте позже.');
   }
 });
 
