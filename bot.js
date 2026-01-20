@@ -150,16 +150,23 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  // Увеличиваем счётчик
-  if (!messageCounters[userId]) {
-    messageCounters[userId] = 0;
+  // Вызываем RPC функцию для увеличения счётчиков
+  try {
+    console.log(`   📤 Вызываем increment_message_counts...`);
+    const { error: rpcError } = await supabase.rpc("increment_message_counts", {
+      p_user_id: userId,
+      p_username: userUsername,
+      p_first_name: userName,
+    });
+
+    if (rpcError) {
+      console.error('❌ Ошибка при вызове RPC:', rpcError);
+      throw rpcError;
+    }
+    console.log(`   ✅ Счётчик увеличен через RPC`);
+  } catch (error) {
+    console.error('⚠️ Ошибка обработки сообщения:', error.message);
   }
-  messageCounters[userId]++;
-
-  console.log(`   ➕ Счётчик: ${messageCounters[userId]}`);
-
-  // Сохраняем в БД с ником
-  await saveCounterToDB(userId, messageCounters[userId], userUsername, userName);
 });
 
 // Команда /stats
