@@ -339,6 +339,37 @@ bot.onText(/\/start/, (msg) => {
   console.log('✅ Приветствие отправлено' + (webAppUrl ? ' с кнопкой мини‑аппа' : ''));
 });
 
+// Команда /top - показать топ с кнопкой открытия мини-приложения
+bot.onText(/\/top/, (msg) => {
+  const chatId = msg.chat.id;
+
+  if (!isAllowed(chatId)) return;
+
+  console.log(`\n📊 Команда /top от пользователя ID: ${msg.from.id}`);
+
+  const webAppUrl = process.env.WEB_APP_URL;
+  
+  if (webAppUrl) {
+    // Отправляем сообщение с inline-кнопкой
+    bot.sendMessage(
+      chatId,
+      '📊 <b>Статистика активности чата</b>\n\nОткройте мини-приложение, чтобы увидеть полный рейтинг участников!',
+      {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '📊 Открыть ТОП', web_app: { url: webAppUrl } }
+          ]]
+        }
+      }
+    );
+    console.log('✅ Сообщение с кнопкой ТОПа отправлено');
+  } else {
+    bot.sendMessage(chatId, '⚠️ Мини-приложение не настроено. Используйте /stats для просмотра топа.');
+    console.log('⚠️ WEB_APP_URL не настроен');
+  }
+});
+
 // Обработка ошибок
 bot.on('error', (error) => {
   console.error('❌ Ошибка бота:', error);
