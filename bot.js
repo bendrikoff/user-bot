@@ -73,49 +73,6 @@ async function getAvatarUrlById(userId) {
   }
 }
 
-// Установка кнопки меню чата для конкретного пользователя
-const menuButtonSet = new Set(); // Отслеживаем, для кого уже установлена кнопка
-
-async function setChatMenuButton(chatId) {
-  // Проверяем, не устанавливали ли уже кнопку для этого чата
-  if (menuButtonSet.has(chatId)) return;
-  
-  try {
-    const webAppUrl = process.env.WEB_APP_URL;
-    const apiUrl = `https://api.telegram.org/bot${token}/setChatMenuButton`;
-    
-    const menuButton = webAppUrl 
-      ? {
-          type: 'web_app',
-          text: '📊 Статистика',
-          web_app: { url: webAppUrl }
-        }
-      : {
-          type: 'commands'
-        };
-    
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        menu_button: menuButton
-      })
-    });
-    
-    const result = await response.json();
-    
-    if (result.ok) {
-      menuButtonSet.add(chatId); // Запоминаем, что установили кнопку
-      console.log(`✅ Кнопка меню установлена для чата ${chatId} (${webAppUrl ? 'Web App' : 'Команды'})`);
-    } else {
-      console.error(`⚠️ Ошибка API:`, result.description);
-    }
-  } catch (error) {
-    console.error('⚠️ Ошибка установки кнопки меню:', error.message);
-  }
-}
-
 // Загрузка счётчиков из БД при запуске
 async function loadCountersFromDB() {
   try {
@@ -174,11 +131,6 @@ bot.on('message', async (msg) => {
   const userUsername = msg.from.username || null;
 
   if (!isAllowed(chatId)) return; // игнорируем полностью чужие чаты
-
-  // Устанавливаем кнопку меню для пользователя (если ещё не установлена)
-  if (msg.chat.type === 'private') {
-    setChatMenuButton(chatId).catch(e => console.error('⚠️ Ошибка setChatMenuButton:', e));
-  }
 
   console.log(`\n📨 Новое сообщение:`);
   console.log(`   Чат ID: ${chatId}`);
@@ -361,14 +313,11 @@ bot.onText(/\/help/, (msg) => {
 });
 
 // Команда /start
-bot.onText(/\/start/, async (msg) => {
+bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
   if (!isAllowed(chatId)) return;
 
   console.log(`\n👋 Команда /start от пользователя ID: ${msg.from.id}`);
-
-  // Устанавливаем кнопку меню чата
-  await setChatMenuButton(chatId);
 
   const webAppUrl = process.env.WEB_APP_URL;
   const keyboard = webAppUrl
@@ -407,6 +356,5 @@ loadCountersFromDB();
 
 console.log('🤖 Бот запущен и готов к работе...');
 console.log('📢 Жду входящих сообщений...\n');
-console.log('💡 Используйте /start в чате, чтобы установить кнопку меню\n');
 
 // API через Supabase REST (не нужен свой сервер)
