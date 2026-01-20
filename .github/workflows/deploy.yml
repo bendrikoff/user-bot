@@ -58,6 +58,8 @@ jobs:
             TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
             SUPABASE_URL=${{ secrets.SUPABASE_URL }}
             SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}
+            SUPABASE_TOP_FUNCTION_URL=${{ secrets.SUPABASE_TOP_FUNCTION_URL }}
+            SUPABASE_FUNCTION_KEY=${{ secrets.SUPABASE_FUNCTION_KEY }}
             WEB_APP_URL=${{ secrets.WEB_APP_URL }}
             EOF
             npm ci
