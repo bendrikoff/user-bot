@@ -1,6 +1,10 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const { createClient } = require('@supabase/supabase-js');
+const express = require('express');
+const cors = require('cors');
+const fs = require('fs/promises');
+const path = require('path');
 
 // Инициализация бота
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -20,6 +24,7 @@ console.log('🔑 Edge function key:', topFunctionKey ? '✅ Установле�
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 const apiPort = process.env.API_PORT || 3000;
+const avatarDir = process.env.AVATAR_DIR || path.join(__dirname, 'avatars');
 
 // Объект для хранения счётчиков в памяти
 const messageCounters = {};
@@ -100,6 +105,76 @@ async function getAvatarUrlById(userId) {
   }
 }
 
+// Сохраняем аватар локально под userId и возвращаем http-url для раздачи
+async function downloadAvatar(userId, { force = false } = {}) {
+  await fs.mkdir(avatarDir, { recursive: true });
+  const filePath = path.join(avatarDir, `${userId}.jpg`);
+
+  if (!force) {
+    try {
+      await fs.access(filePath);
+      return { filePath, url: `http://localhost:${apiPort}/avatars/${userId}.jpg` };
+    } catch (_) {
+      // файла нет — идём качать
+    }
+  }
+
+  const remoteUrl = await getAvatarUrlById(userId);
+  if (!remoteUrl) return { filePath: null, url: null };
+
+  const resp = await fetch(remoteUrl);
+  if (!resp.ok) return { filePath: null, url: null };
+  const buf = Buffer.from(await resp.arrayBuffer());
+  await fs.writeFile(filePath, buf);
+
+  return { filePath, url: `http://localhost:${apiPort}/avatars/${userId}.jpg` };
+}
+
+// Обновляем профиль пользователя (аватар + имя/ник)
+async function syncUserProfile(userId, username, firstName, { forceAvatar = false } = {}) {
+  const { url } = await downloadAvatar(userId, { force: forceAvatar });
+
+  try {
+    const updatePayload = {
+      username,
+      first_name: firstName,
+    };
+    if (url) updatePayload.avatar_url = url;
+
+    const { data: existing, error: selectError } = await supabase
+      .from('user_messages')
+      .select('user_id')
+      .eq('user_id', userId)
+      .limit(1)
+      .maybeSingle();
+
+    if (selectError) throw selectError;
+
+    if (existing) {
+      const { error } = await supabase
+        .from('user_messages')
+        .update(updatePayload)
+        .eq('user_id', userId);
+      if (error) throw error;
+    } else {
+      const { error } = await supabase
+        .from('user_messages')
+        .insert({
+          user_id: userId,
+          message_count: 0,
+          weekly_count: 0,
+          month_count: 0,
+          day_count: 0,
+          ...updatePayload,
+          last_message_date: new Date().toISOString(),
+        });
+      if (error) throw error;
+    }
+  } catch (e) {
+    console.error('⚠️ Ошибка обновления профиля:', e.message);
+  }
+}
+
 // Загрузка счётчиков из БД при запуске
 async function loadCountersFromDB() {
   try {
@@ -175,6 +250,32 @@ bot.on('message', async (msg) => {
   if (msg.from.is_bot) {
     console.log(`   ℹ️ Сообщение от бота, пропускаем`);
     return;
+  }
+
+  // Проверяем и загружаем аватарку если её нет
+  const avatarPath = path.join(avatarDir, `${userId}.jpg`);
+  try {
+    await fs.access(avatarPath);
+  } catch (_) {
+    console.log(`   📥 Аватарка не найдена, загружаю...`);
+    const { url } = await downloadAvatar(userId);
+    if (url) {
+      console.log(`   ✅ Аватарка загружена`);
+      // Обновляем avatar_url в БД
+      try {
+        const { error } = await supabase
+          .from('user_messages')
+          .update({ avatar_url: url })
+          .eq('user_id', userId);
+        if (!error) {
+          console.log(`   ✅ avatar_url обновлён в БД`);
+        }
+      } catch (e) {
+        console.error(`   ⚠️ Не удалось обновить avatar_url:`, e.message);
+      }
+    } else {
+      console.log(`   ⚠️ Не удалось загрузить аватарку`);
+    }
   }
 
   // Вызываем RPC функцию для увеличения счётчиков
@@ -425,3 +526,92 @@ console.log('🤖 Бот запущен и готов к работе...');
 console.log('📢 Жду входящих сообщений...\n');
 
 // API через Supabase REST (не нужен свой сервер)
+
+// ============================================
+// 🌐 EXPRESS API SERVER
+// ============================================
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+app.use('/avatars', express.static(avatarDir));
+
+// API endpoint для лидерборда
+app.get('/api/leaderboard', async (req, res) => {
+  try {
+    const { period = 'week' } = req.query;
+    
+    console.log(`\n🌐 API запрос /api/leaderboard?period=${period}`);
+    
+    let data;
+    let error;
+
+    if (period === 'day') {
+      // Получаем данные за день
+      const result = await supabase
+        .from('user_messages')
+        .select('*')
+        .gt('day_count', 0)
+        .order('day_count', { ascending: false })
+        .limit(100);
+      
+      data = result.data;
+      error = result.error;
+    } else if (period === 'week') {
+      // Получаем данные за неделю
+      const result = await supabase
+        .from('user_messages')
+        .select('*')
+        .gt('week_count', 0)
+        .order('week_count', { ascending: false })
+        .limit(100);
+      
+      data = result.data;
+      error = result.error;
+    } else if (period === 'month') {
+      // Получаем данные за месяц
+      const result = await supabase
+        .from('user_messages')
+        .select('*')
+        .gt('month_count', 0)
+        .order('month_count', { ascending: false })
+        .limit(100);
+      
+      data = result.data;
+      error = result.error;
+    } else {
+      return res.status(400).json({ error: 'Invalid period. Use: day, week, or month' });
+    }
+
+    if (error) {
+      console.error('❌ Ошибка БД:', error);
+      return res.status(500).json({ error: error.message });
+    }
+
+    const items = (data || []).map((row) => ({
+      ...row,
+      avatar_url: row.avatar_url || null,
+    }));
+
+    console.log(`✅ Отправлено ${items.length} записей (с avatar_url)`);
+    
+    res.json({
+      items
+    });
+  } catch (err) {
+    console.error('❌ Ошибка API:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Запуск сервера
+const PORT = process.env.API_PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`\n🌐 API сервер запущен на http://localhost:${PORT}`);
+  console.log(`📊 Leaderboard API: http://localhost:${PORT}/api/leaderboard?period=day|week|month\n`);
+});
